@@ -72,14 +72,54 @@
     if (a) { $('tId').value = a.getAttribute('data-id'); track(a.getAttribute('data-id')); }
   });
 
-  /* enquiry form: opens the visitor's email app with the details filled in */
+  /* enquiry form: sent to the owner's email through Web3Forms (works on any device).
+     If sending fails, the visitor gets WhatsApp and email buttons instead. */
+  var WEB3FORMS_KEY = 'c8cf1996-9aab-4169-bdda-44c438f4c79'; /* paste your full key from web3forms.com here */
+  var OWNER_MAIL = 'jaikee.kumar_mba25@gsv.ac.in';
+  var OWNER_WA = '917488991657';
+  if (!/^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(WEB3FORMS_KEY)) { console.warn('RakeLink: the Web3Forms access key looks incomplete. Copy it again from your Web3Forms email.'); }
+
+  function enqLinks(out, text, subject) {
+    var box = el('div', null, 'btns'), w = el('a', 'Send on WhatsApp', 'btn amber'), m = el('a', 'Send by email', 'btn');
+    w.href = 'https://wa.me/' + OWNER_WA + '?text=' + encodeURIComponent(text); w.target = '_blank'; w.rel = 'noopener';
+    m.href = 'mailto:' + OWNER_MAIL + '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(text);
+    box.appendChild(w); box.appendChild(m); out.appendChild(box);
+  }
+
   $('eForm').addEventListener('submit', function (e) {
     e.preventDefault();
-    var s = svc($('eSvc').value), body =
-      'Name: ' + $('eName').value + '\nCompany: ' + $('eCo').value + '\nEmail: ' + $('eMail').value + '\nPhone: ' + $('ePhone').value +
-      '\nService: ' + (s ? s.name : '') + '\n\n' + $('eMsg').value;
-    $('emsg').textContent = 'Your email app should open with the enquiry ready to send. If it does not, write to jaikee.kumar_mba25@gsv.ac.in.';
-    location.href = 'mailto:jaikee.kumar_mba25@gsv.ac.in?subject=' + encodeURIComponent('Rail freight enquiry: ' + (s ? s.name : '')) + '&body=' + encodeURIComponent(body);
+    var s = svc($('eSvc').value), sname = s ? s.name : '', out = $('emsg'), btn = this.querySelector('button[type=submit]'), form = this;
+    var subject = 'Rail freight enquiry: ' + sname;
+    var text = 'Rail freight enquiry\nName: ' + $('eName').value + '\nCompany: ' + $('eCo').value + '\nEmail: ' + $('eMail').value +
+      '\nPhone: ' + $('ePhone').value + '\nService: ' + sname + '\n\n' + $('eMsg').value;
+    if ($('eBot').checked) { out.textContent = 'Thank you. Your enquiry has been sent.'; return; }
+    out.textContent = 'Sending your enquiry...'; btn.disabled = true;
+
+    var data = { name: $('eName').value, email: $('eMail').value, phone: $('ePhone').value, company: $('eCo').value, service: sname, message: $('eMsg').value };
+    function post(url, extra) {
+      var body = {}, k;
+      for (k in data) body[k] = data[k];
+      for (k in extra) body[k] = extra[k];
+      return fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' }, body: JSON.stringify(body) })
+        .then(function (r) { return r.json(); })
+        .then(function (d) { if (!(d.success === true || d.success === 'true')) { throw new Error(d.message || 'Not sent'); } return d; });
+    }
+
+    /* 1st try: Web3Forms (needs the full access key). 2nd try: FormSubmit (no key, one-time email activation). */
+    post('https://api.web3forms.com/submit', { access_key: WEB3FORMS_KEY, subject: subject, from_name: 'RakeLink website' })
+    .catch(function (err) {
+      console.warn('RakeLink: Web3Forms did not accept this, trying FormSubmit.', err);
+      return post('https://formsubmit.co/ajax/' + OWNER_MAIL, { _subject: subject, _template: 'table', _captcha: 'false' });
+    }).then(function () {
+      out.textContent = 'Thank you, ' + $('eName').value.trim() + '. Your enquiry has reached our booking desk. We reply within one working day.';
+      form.reset();
+      out.appendChild(el('p', 'Need a quicker answer? Message us on WhatsApp:', 'small'));
+      enqLinks(out, 'Hello RakeLink, I just sent an enquiry on your website about ' + sname + '.', subject);
+    }).catch(function (err) {
+      console.warn('RakeLink enquiry not sent:', err);
+      out.textContent = 'We could not send this online just now. Please send it with one of these buttons:';
+      enqLinks(out, text, subject);
+    }).then(function () { btn.disabled = false; });
   });
 
   /* ---------- bill generator ---------- */
